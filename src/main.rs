@@ -72,16 +72,21 @@ fn is_rust_file(e: &walkdir::DirEntry) -> bool {
     e.path().extension().map(|e| e == "rs").unwrap_or(false)
 }
 
-fn build_dependency_graph<P>(root_path: P) -> Result<Graph<String, String>>
+fn build_dependency_graph<P>(
+    root_path: P,
+    module_depth: Option<usize>,
+) -> Result<Graph<String, String>>
 where
     P: AsRef<Path>,
 {
     let iter = WalkDir::new(root_path).into_iter();
-    //.filter_entry(|e| is_rust_file(e));
     let mut graph = Graph::new();
 
     for entry in iter {
         let entry = entry?;
+        if !is_rust_file(&entry) {
+            continue;
+        }
         let path = entry.path();
         println!("{}", path.display());
         let file = file_to_ast(path)?;
@@ -95,6 +100,6 @@ where
 }
 
 fn main() {
-    let graph = build_dependency_graph("src").unwrap();
+    let graph = build_dependency_graph("src", None).unwrap();
     println!("{:?}", graph);
 }
