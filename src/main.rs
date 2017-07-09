@@ -4,12 +4,14 @@ extern crate petgraph;
 extern crate walkdir;
 extern crate syn;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs::File;
 use std::io::Read;
+use std::collections::{HashSet, HashMap};
 
 use walkdir::WalkDir;
 use petgraph::prelude::*;
+use petgraph::dot::{Dot, Config};
 
 use errors::Result;
 
@@ -24,51 +26,6 @@ mod errors {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct UsePath {
-    segments: Vec<String>,
-}
-
-impl UsePath {
-    pub fn to_statement(&self) -> String {
-        self.segments.join("::")
-    }
-
-    pub fn to_path<P>(&self, root: P) -> PathBuf where P: AsRef<Path> {
-        let mut path = PathBuf::new();
-        let len = self.segments.len();
-        if len == 1 {
-            PathBuf::from(format!("{}.rs", self.segments[0]))
-        } else {
-            for segment in self.segments.iter().take(len - 1) {
-                path.push(segment);
-            }
-            path.push(format!("{}.rs", self.segments.last().unwrap()));
-            root.as_ref().join(&path)
-        }
-    }
-
-    pub fn is_extern<P>(&self, root: &P) -> bool where P: AsRef<Path> {
-        self.to_path(root).exists()
-    }
-}
-
-impl From<syn::ItemUse> for UsePath {
-    fn from(item_use: syn::ItemUse) -> UsePath {
-        let mut segments = vec![];
-        let path = match *item_use.path {
-            syn::ViewPath::Simple(ref p) => &p.path,
-            syn::ViewPath::Glob(ref p) => &p.path,
-            syn::ViewPath::List(ref p) => &p.path,
-        };
-        for segment in &path.segments {
-            segments.push(segment.item().ident.to_string())
-        }
-
-        UsePath { segments }
-    }
-}
-
 pub fn file_to_ast<P>(path: P) -> Result<syn::File>
 where
     P: AsRef<Path>,
@@ -80,22 +37,40 @@ where
     Ok(ast)
 }
 
-fn extract_use_statements(file: &syn::File, depth: Option<usize>) -> Vec<UsePath> {
-    let mut statements = vec![];
+fn extract_used_modules(file: &syn::File) -> HashSet<String> {
+    let mut statements = HashSet::new();
     for item in &file.items {
         match item.node {
             syn::ItemKind::Use(ref item_use) => {
-                let path = UsePath::from(item_use.clone());
-                statements.push(path);
+                let path = match *item_use.path {
+                    syn::ViewPath::Simple(ref p) => &p.path,
+                    syn::ViewPath::Glob(ref p) => &p.path,
+                    syn::ViewPath::List(ref p) => &p.path,
+                };
+                match path.segments.iter().nth(0) {
+                    Some(s) => statements.insert(s.item().ident.to_string()),
+                    None => continue,
+                };
             }
             _ => (),
         }
     }
+    statements
+}
 
-    if let Some(n) = depth { 
-        statements[..n].to_vec()
+fn is_external_dependency<P>(root: P, module: &str) -> bool
+where
+    P: AsRef<Path>,
+{
+    let root = root.as_ref();
+    let file = root.join(&format!("{}.rs", module));
+    let module = root.join(module);
+    if file.is_file() {
+        false
+    } else if module.is_dir() {
+        false
     } else {
-        statements
+        true
     }
 }
 
@@ -103,14 +78,13 @@ fn is_rust_file(e: &walkdir::DirEntry) -> bool {
     e.path().extension().map(|e| e == "rs").unwrap_or(false)
 }
 
-fn build_dependency_graph<P>(
-    root_path: P,
-    module_depth: Option<usize>,
-) -> Result<Graph<String, String>>
+fn build_dependency_graph<P>(root_path: P) -> Result<Graph<String, ()>>
 where
     P: AsRef<Path>,
 {
     let mut graph = Graph::new();
+    let mut nodes: HashMap<String, NodeIndex> = HashMap::new();
+
     for entry in WalkDir::new(&root_path) {
         let entry = entry?;
         if !is_rust_file(&entry) {
@@ -118,16 +92,28 @@ where
         }
         let path = entry.path();
         let file = file_to_ast(path)?;
-        let uses = extract_use_statements(&file, module_depth);
-        let module_path = path.strip_prefix(&root_path)?;
-        for statement in uses {
-            println!("{}: {}", module_path.display(), statement.to_statement());
+        let modules = extract_used_modules(&file);
+        let this_module = path.file_stem().unwrap().to_string_lossy().into_owned();
+        let from_idx = nodes.entry(this_module.clone())
+            .or_insert_with(|| graph.add_node(this_module.clone())).clone();
+        for module in &modules {
+            let to_idx = nodes
+                .entry(module.clone())
+                .or_insert_with(|| graph.add_node(module.clone())).clone();
+            if graph.find_edge(from_idx, to_idx).is_none() {
+                graph.add_edge(from_idx, to_idx, ());
+            }
         }
     }
     Ok(graph)
 }
 
 fn main() {
-    let graph = build_dependency_graph("../link-collector/src", Some(1)).unwrap();
-    println!("{:?}", graph);
+    use std::fs::File;
+    use std::io::Write;
+
+    let graph = build_dependency_graph("C:\\Users\\Martin\\IdeaProjects\\link-collector\\src")
+        .unwrap();
+    let mut file = File::create("graph.dot").unwrap();
+    write!(file, "{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel])).unwrap();
 }
