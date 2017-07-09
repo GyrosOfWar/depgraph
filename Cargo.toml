@@ -5,7 +5,7 @@ authors = ["Martin Tomasi <martin.tomasi@gmail.com>"]
 
 [dependencies]
 walkdir = "1.0"
-syn = { git = "https://github.com/dtolnay/syn", features = ["full", "parsing", "printing"] }
+syn = { git = "https://github.com/dtolnay/syn", features = ["full"] }
 petgraph = "0.4"
 error-chain = "0.10"
 clap = "2"

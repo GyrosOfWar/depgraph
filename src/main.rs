@@ -71,6 +71,16 @@ fn is_rust_file(e: &walkdir::DirEntry) -> bool {
     e.path().extension().map(|e| e == "rs").unwrap_or(false)
 }
 
+fn module_from_path(root_path: &Path, path: &Path) -> Result<String> {
+    let relative_path = path.strip_prefix(root_path)?;
+    let module_name = Path::new(relative_path.iter().nth(0).unwrap());
+    Ok(module_name
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned())
+}
+
 fn build_dependency_graph<P>(root_path: P, ignore_extern: bool) -> Result<Graph<String, ()>>
 where
     P: AsRef<Path>,
@@ -86,19 +96,14 @@ where
         let path = entry.path();
         let file = file_to_ast(path)?;
         let modules = extract_used_modules(&file);
-        let this_module = path.strip_prefix(&root_path)?;
-        let this_module = Path::new(this_module.iter().nth(0).unwrap());
-        let this_module = this_module
-            .file_stem()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+        let this_module = module_from_path(root_path.as_ref(), path)?;
 
         let from_idx = *nodes
             .entry(this_module.clone())
             .or_insert_with(|| graph.add_node(this_module.clone()));
         for module in &modules {
             if ignore_extern && is_external_dependency(&root_path, module) {
+                println!("Ignoring {}", module);
                 continue;
             }
             let to_idx = *nodes
