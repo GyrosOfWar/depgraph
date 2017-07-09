@@ -1,19 +1,20 @@
 #[macro_use]
+extern crate clap;
+#[macro_use]
 extern crate error_chain;
 extern crate petgraph;
-extern crate walkdir;
 extern crate syn;
-extern crate clap;
+extern crate walkdir;
 
-use std::path::Path;
-use std::fs::File;
-use std::io::Read;
 use std::collections::{HashSet, HashMap};
 use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
 
-use walkdir::WalkDir;
-use petgraph::prelude::*;
 use petgraph::dot::{Dot, Config};
+use petgraph::prelude::*;
+use walkdir::WalkDir;
 
 use errors::Result;
 
@@ -28,7 +29,7 @@ mod errors {
     }
 }
 
-pub fn file_to_ast<P>(path: P) -> Result<syn::File>
+fn file_to_ast<P>(path: P) -> Result<syn::File>
 where
     P: AsRef<Path>,
 {
@@ -97,11 +98,11 @@ where
         let modules = extract_used_modules(&file);
         let this_module = path.strip_prefix(&root_path)?;
         let this_module = Path::new(this_module.iter().nth(0).unwrap());
-    
-        let this_module = if this_module.extension() == Some(OsStr::new("rs")) { 
+
+        let this_module = if this_module.extension() == Some(OsStr::new("rs")) {
             let s = format!("{}", this_module.display());
             let l = s.len();
-            s[..l-3].to_string()
+            s[..l - 3].to_string()
         } else {
             format!("{}", this_module.display())
         };
@@ -126,16 +127,32 @@ where
     Ok(graph)
 }
 
-fn main() {
-    use std::fs::File;
-    use std::io::Write;
+fn run() -> Result<()> {
+    let matches =  clap_app!(depgraph => 
+        (version: "0.1")
+        (author: "Martin Tomasi <martin.tomasi@gmail.com>")
+        (about: "Shows a dependency graph for Rust projects")
+        (@arg IGNORE_EXTERNAL: -i --ignore-external "Ignore external dependencies (extern crates)")
+        (@arg OUT_PATH: +takes_value -o --output "Output file.")
+        (@arg SRC_PATH: +required "Path to the src folder of the Rust project")
+    ).get_matches();
 
-    let graph = build_dependency_graph("C:\\Users\\Martin\\IdeaProjects\\link-collector\\src", true)
-        .unwrap();
-    let mut file = File::create("graph.dot").unwrap();
-    write!(
-        file,
-        "{:?}",
-        Dot::with_config(&graph, &[Config::EdgeNoLabel])
-    ).unwrap();
+    let path = matches.value_of("SRC_PATH").unwrap();
+    let ignore_external = matches.is_present("IGNORE_EXTERNAL");
+    let graph = build_dependency_graph(path, ignore_external)?;
+    if !matches.is_present("OUT_PATH") {
+        println!("{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel]))
+    } else {
+        let path = matches.value_of("OUT_PATH").unwrap();
+        let mut file = File::create(path)?;
+        write!(file, "{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel]))?;
+    }
+
+    Ok(())
+}
+
+fn main() {
+    if let Err(e) = run() {
+        println!("Error: {}", e);
+    }
 }
