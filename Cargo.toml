@@ -8,3 +8,4 @@ walkdir = "1.0"
 syn = { git = "https://github.com/dtolnay/syn", features = ["full", "parsing", "printing"] }
 petgraph = "0.4"
 error-chain = "0.10"
+clap = "2"
