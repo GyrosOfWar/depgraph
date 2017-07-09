@@ -7,7 +7,6 @@ extern crate syn;
 extern crate walkdir;
 
 use std::collections::{HashSet, HashMap};
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -43,19 +42,16 @@ where
 fn extract_used_modules(file: &syn::File) -> HashSet<String> {
     let mut statements = HashSet::new();
     for item in &file.items {
-        match item.node {
-            syn::ItemKind::Use(ref item_use) => {
-                let path = match *item_use.path {
-                    syn::ViewPath::Simple(ref p) => &p.path,
-                    syn::ViewPath::Glob(ref p) => &p.path,
-                    syn::ViewPath::List(ref p) => &p.path,
-                };
-                match path.segments.iter().nth(0) {
-                    Some(s) => statements.insert(s.item().ident.to_string()),
-                    None => continue,
-                };
-            }
-            _ => (),
+        if let syn::ItemKind::Use(ref item_use) = item.node {
+            let path = match *item_use.path {
+                syn::ViewPath::Simple(ref p) => &p.path,
+                syn::ViewPath::Glob(ref p) => &p.path,
+                syn::ViewPath::List(ref p) => &p.path,
+            };
+            match path.segments.iter().nth(0) {
+                Some(s) => statements.insert(s.item().ident.to_string()),
+                None => continue,
+            };
         }
     }
     statements
@@ -68,13 +64,7 @@ where
     let root = root.as_ref();
     let file = root.join(&format!("{}.rs", module));
     let module = root.join(module);
-    if file.is_file() {
-        false
-    } else if module.is_dir() {
-        false
-    } else {
-        true
-    }
+    file.is_file() || module.is_dir()
 }
 
 fn is_rust_file(e: &walkdir::DirEntry) -> bool {
@@ -86,7 +76,7 @@ where
     P: AsRef<Path>,
 {
     let mut graph = Graph::new();
-    let mut nodes: HashMap<String, NodeIndex> = HashMap::new();
+    let mut nodes = HashMap::new();
 
     for entry in WalkDir::new(&root_path) {
         let entry = entry?;
@@ -98,27 +88,22 @@ where
         let modules = extract_used_modules(&file);
         let this_module = path.strip_prefix(&root_path)?;
         let this_module = Path::new(this_module.iter().nth(0).unwrap());
+        let this_module = this_module
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
 
-        let this_module = if this_module.extension() == Some(OsStr::new("rs")) {
-            let s = format!("{}", this_module.display());
-            let l = s.len();
-            s[..l - 3].to_string()
-        } else {
-            format!("{}", this_module.display())
-        };
-
-        let from_idx = nodes
+        let from_idx = *nodes
             .entry(this_module.clone())
-            .or_insert_with(|| graph.add_node(this_module.clone()))
-            .clone();
+            .or_insert_with(|| graph.add_node(this_module.clone()));
         for module in &modules {
-            if ignore_extern && is_external_dependency(&root_path, &module) {
+            if ignore_extern && is_external_dependency(&root_path, module) {
                 continue;
             }
-            let to_idx = nodes
+            let to_idx = *nodes
                 .entry(module.clone())
-                .or_insert_with(|| graph.add_node(module.clone()))
-                .clone();
+                .or_insert_with(|| graph.add_node(module.clone()));
             if graph.find_edge(from_idx, to_idx).is_none() {
                 graph.add_edge(from_idx, to_idx, ());
             }
@@ -128,7 +113,7 @@ where
 }
 
 fn run() -> Result<()> {
-    let matches =  clap_app!(depgraph => 
+    let matches = clap_app!(depgraph => 
         (version: "0.1")
         (author: "Martin Tomasi <martin.tomasi@gmail.com>")
         (about: "Shows a dependency graph for Rust projects")
@@ -145,7 +130,11 @@ fn run() -> Result<()> {
     } else {
         let path = matches.value_of("OUT_PATH").unwrap();
         let mut file = File::create(path)?;
-        write!(file, "{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel]))?;
+        write!(
+            file,
+            "{:?}",
+            Dot::with_config(&graph, &[Config::EdgeNoLabel])
+        )?;
     }
 
     Ok(())
