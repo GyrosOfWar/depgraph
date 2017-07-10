@@ -64,7 +64,7 @@ where
     let root = root.as_ref();
     let file = root.join(&format!("{}.rs", module));
     let module = root.join(module);
-    file.is_file() || module.is_dir()
+    !(file.is_file() || module.is_dir())
 }
 
 fn is_rust_file(e: &walkdir::DirEntry) -> bool {
@@ -103,7 +103,6 @@ where
             .or_insert_with(|| graph.add_node(this_module.clone()));
         for module in &modules {
             if ignore_extern && is_external_dependency(&root_path, module) {
-                println!("Ignoring {}", module);
                 continue;
             }
             let to_idx = *nodes
@@ -122,8 +121,8 @@ fn run() -> Result<()> {
         (version: "0.1")
         (author: "Martin Tomasi <martin.tomasi@gmail.com>")
         (about: "Shows a dependency graph for Rust projects")
-        (@arg IGNORE_EXTERNAL: -i --ignore-external "Ignore external dependencies (extern crates)")
-        (@arg OUT_PATH: +takes_value -o --output "Output file.")
+        (@arg IGNORE_EXTERNAL: -i --ignore "Ignore external dependencies (extern crates)")
+        (@arg OUT_PATH: +takes_value -o --output "Graphviz output file.")
         (@arg SRC_PATH: +required "Path to the src folder of the Rust project")
     ).get_matches();
 
@@ -131,7 +130,18 @@ fn run() -> Result<()> {
     let ignore_external = matches.is_present("IGNORE_EXTERNAL");
     let graph = build_dependency_graph(path, ignore_external)?;
     if !matches.is_present("OUT_PATH") {
-        println!("{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel]))
+        for idx in graph.node_indices() {
+            let node = &graph[idx];
+            let mut neighbors: Vec<_> = graph.neighbors(idx).map(|n| &graph[n]).collect();
+            neighbors.sort();
+            if !neighbors.is_empty() {
+                println!("Dependencies for module `{}`:", node);
+                for neighbor in neighbors {
+                    println!("\t{}", neighbor);
+                }
+            }
+        }
+
     } else {
         let path = matches.value_of("OUT_PATH").unwrap();
         let mut file = File::create(path)?;
