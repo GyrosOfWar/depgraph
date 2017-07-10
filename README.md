@@ -1,5 +1,12 @@
 # depgraph
-A command line tool that shows dependencies Rust modules have to other modules. Usage:
+A command line tool that shows dependencies Rust modules have to other modules. 
+Disclaimer: Mostly a proof of concept, does not work for many common cases (e.g. multiple modules within
+a file)
+
+Currently only supports top-level modules (e.g. `use some::module::path` becomes `some`). Works
+by parsing `use` statements in the source files (via the `syn` library). 
+
+Usage:
 ```
 depgraph [FLAGS] [OPTIONS] <SRC_PATH>
 
@@ -17,4 +24,12 @@ ARGS:
 
 If no output path is given, the tool will print the dependencies to the console. 
 
-Currently only supports top-level modules (e.g. `use some::module::path` becomes `some`).
+Example output: (for this project, which has only one file)
+```
+$ depgraph src/
+Dependencies for module `main`:
+        errors
+        petgraph
+        std
+        walkdir
+```
