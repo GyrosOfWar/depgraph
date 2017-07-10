@@ -74,11 +74,13 @@ fn is_rust_file(e: &walkdir::DirEntry) -> bool {
 fn module_from_path(root_path: &Path, path: &Path) -> Result<String> {
     let relative_path = path.strip_prefix(root_path)?;
     let module_name = Path::new(relative_path.iter().nth(0).unwrap());
-    Ok(module_name
-        .file_stem()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned())
+    Ok(
+        module_name
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 fn build_dependency_graph<P>(root_path: P, ignore_extern: bool) -> Result<Graph<String, ()>>
