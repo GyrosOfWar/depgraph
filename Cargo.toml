@@ -4,8 +4,8 @@ version = "0.1.0"
 authors = ["Martin Tomasi <martin.tomasi@gmail.com>"]
 
 [dependencies]
-walkdir = "1.0"
-syn = { git = "https://github.com/dtolnay/syn", features = ["full"] }
-petgraph = "0.4"
-error-chain = "0.10"
-clap = "2"
+walkdir = "2.2.7"
+syn = { version = "*", features = ["full"] }
+petgraph = "0.4.13"
+clap = "2.32.0"
+failure = "0.1"
